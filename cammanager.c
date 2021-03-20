@@ -79,7 +79,7 @@ int main(int argc, const char *argv[])
 
 void quit(int signal)
 {
-  if (urand) free(urand);
+  if (urand) fclose(urand);
   if (mapped) munmap(addr, bufsize);
   if (fdshm != -1) close(fdshm);
   if (shm_unlink(shmpath) == -1)

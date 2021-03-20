@@ -158,7 +158,8 @@ void cq_drop(camqueue_t *cq, int idx)
 {
   if (!cq) return;
   if (cq_isempty(cq)) return;
-  
+
+  cam_free(cq->array[idx]);
   while (idx != cq->rear)
     {
       cq->array[idx] = cq->array[(idx + 1) % cq->capacity];
@@ -209,8 +210,6 @@ void cam_free(camera_t *cam)
 
   munmap(cam->fqueue, cam->bufsize);
   close(cam->fdshm);
-  if (shm_unlink(cam->shmpath))
-      perror("Error: Couldn't unlik shared memory of freeing camera: ");
   free(cam);
 }
 

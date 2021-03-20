@@ -1,5 +1,8 @@
 #include "utility.h"
 
+#include <openssl/md5.h>
+
+void checksum(const char* frame, size_t size, char *string);
 void scan_cameras(camqueue_t *cq, int bufsize);
 void quit(int signal);
 
@@ -23,11 +26,28 @@ int main(int argc, const char *argv[])
       if (cq_isempty(cq)) continue;
 
       fqueue_t *fq = cq->array[cq->front]->fqueue;
-
-      fq_dequeue(fq);
+      if (fq_isempty(fq)) continue;
+      char *frame = fq_dequeue(fq);
+      char csum[33];
+      checksum(frame, fsize, csum);
+      fprintf(stderr, "%s\n", csum);
     }
   
   quit(0);  
+}
+
+void checksum(const char* frame, size_t size, char *string)
+{
+  unsigned char digest[16];
+  MD5_CTX ctx;
+
+  MD5_Init(&ctx);
+  MD5_Update(&ctx, frame, size);
+  MD5_Final(digest, &ctx);
+  char md5string[33];
+  for(int i = 0; i < 16; ++i)
+    sprintf(&md5string[i*2], "%02x", (unsigned int)digest[i]);
+  strcpy(string, md5string);
 }
 
 void scan_cameras(camqueue_t *cq, int bufsize)
