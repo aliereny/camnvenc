@@ -72,6 +72,7 @@ int cq_contains(camqueue_t *cq, const char *shmpath);
 int cq_enqueue(camqueue_t *cq, const char *shmpath, int bufsize);
  
 void cq_dequeue(camqueue_t *cq);
+void cq_requeue(camqueue_t *cq);
 void cq_free(camqueue_t *cq);
 void cq_drop(camqueue_t *cq, int idx);
 

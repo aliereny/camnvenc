@@ -158,6 +158,11 @@ int main(int argc, const char *argv[])
 	      ++cams[i]->frmcnt;
 	    }
 	}
+
+      for (int i = 0; i < ready_cams; ++i)
+	{
+	  cq_requeue(cq);
+	}
     }
   
   quit(0);  

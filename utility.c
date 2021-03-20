@@ -186,6 +186,13 @@ camera_t *cq_next(camqueue_t *cq)
   else return NULL;
 }
 
+void cq_requeue(camqueue_t *cq)
+{
+  cq->rear = (cq->rear + 1) % cq->capacity;
+  cq->array[cq->rear] = cq->array[cq->front];
+  cq->front = (cq->front + 1) % cq->capacity;
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 camera_t *cam_create(const char *shmpath, int bufsize)
