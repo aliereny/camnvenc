@@ -170,6 +170,22 @@ void cq_drop(camqueue_t *cq, int idx)
     
 }
 
+camera_t *cq_front(camqueue_t *cq)
+{
+  return cq->array[cq->front];
+}
+
+camera_t *cq_rear(camqueue_t *cq)
+{
+  return cq->array[cq->rear];
+}
+
+camera_t *cq_next(camqueue_t *cq)
+{
+  if (cq->size > 1) return cq->array[(cq->front + 1) % cq->capacity];
+  else return NULL;
+}
+
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 camera_t *cam_create(const char *shmpath, int bufsize)
@@ -199,6 +215,7 @@ camera_t *cam_create(const char *shmpath, int bufsize)
   strncpy(cam->shmpath, shmpath, 16);
   cam->fdshm = fdshm;
   cam->bufsize = bufsize;
+  cam->frmcnt = 0;
   cam->fqueue = (fqueue_t *)addr;
 
   return cam;

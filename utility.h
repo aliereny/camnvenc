@@ -32,6 +32,7 @@ typedef struct camera_t
   char shmpath[16];
   int fdshm;
   int bufsize;
+  int frmcnt;
   fqueue_t *fqueue;
 } camera_t;
 
@@ -60,6 +61,10 @@ char *fq_array(fqueue_t *fq, int idx);
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 camqueue_t *cq_create(int capacity);
+
+camera_t *cq_front(camqueue_t *cq);
+camera_t *cq_rear(camqueue_t *cq);
+camera_t *cq_next(camqueue_t *cq);
 
 int cq_isfull(camqueue_t *cq);
 int cq_isempty(camqueue_t *cq);

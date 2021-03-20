@@ -1,14 +1,14 @@
 CC=gcc
-CFLAGS=-lrt -g -Wall
+CFLAGS=-g -Wall
 CAMERA_MACROS=-D WIDTH=1280 -D HEIGHT=800 -D QSIZE=120 -D FPS=30
 
 all: gpumanager cammanager
 
 gpumanager: gpumanager.o utility.o
-	$(CC) -o gpumanager gpumanager.o utility.o $(CFLAGS) -lcrypto
+	$(CC) -o gpumanager gpumanager.o utility.o $(CFLAGS) -lrt -lcrypto `pkg-config --libs libavutil libavcodec`
 
 cammanager: cammanager.o utility.o
-	$(CC) -o cammanager cammanager.o utility.o $(CFLAGS)
+	$(CC) -o cammanager cammanager.o utility.o $(CFLAGS) -lrt
 
 gpumanager.o: gpumanager.c utility.h
 	$(CC) -c gpumanager.c $(CFLAGS) $(CAMERA_MACROS)
