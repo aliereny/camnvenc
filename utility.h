@@ -1,96 +1,83 @@
-#ifndef FQUEUE
-#define FQUEUE
+#ifndef UTILITY
+#define UTILITY
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <stdarg.h>
 
-#define READER 1
-#define WRITER -1
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
+#define sclose(msg) \
+  do { perror(msg); quit(0); } while (0)
+
+#define dtime(t0) \
+  ((double) (clock() - (t0)) / CLOCKS_PER_SEC)
 
 typedef struct fqueue_t
 {
   int capacity;
-  int size;
   int front;
   int rear;
-  char **array;
+  int size;
+  int fsize;
 } fqueue_t;
 
 typedef struct camera_t
 {
-  int width;
-  int height;
-  int fsize;
-  int fps;
+  char shmpath[16];
+  int fdshm;
   int bufsize;
-  int key;
-  int turn;
-  int frame_count;
   fqueue_t *fqueue;
-  
 } camera_t;
 
 typedef struct camqueue_t
 {
   int capacity;
-  int size;
   int front;
   int rear;
+  int size;
   camera_t **array;
 } camqueue_t;
 
-int getshmsize(int fsize, int bufsize);
-
-// Frame queue function declarations
-fqueue_t *fq_create(void *addr, int capacity, int framesize);
-
-char* fq_enqueue(fqueue_t *fqueue);
-char* fq_dequeue(fqueue_t *fqueue);
-char* fq_front(fqueue_t *fqueue);
-char* fq_rear(fqueue_t *fqueue);
-
-int fq_isfull(fqueue_t *fqueue);
-int fq_isempty(fqueue_t *fqueue);
-int fq_size(fqueue_t *fqueue);
-
-// Camera function declarations
-camera_t *cam_create(void *addr, int width, int height, int fps, int bufsize, int key);
-
-fqueue_t *cam_fqueue(camera_t *camera);
-
-int cam_key(camera_t *camera);
-int cam_efc(camera_t *camera);
-int cam_width(camera_t *camera);
-int cam_height(camera_t *camera);
-int cam_fsize(camera_t *camera);
-int cam_fps(camera_t *camera);
-int cam_turn(camera_t *camera);
-int cam_bufsize(camera_t *camera);
-int cam_fcnt (camera_t *camera);
+void exit_sys(const char *message);
   
-void cam_setturn(camera_t *camera, int party);
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-// Camera queue function declarations
+fqueue_t *fq_create_at(void *addr, int capacity, size_t fsize);
+
+int fq_isfull(fqueue_t *fq);
+int fq_isempty(fqueue_t *fq);
+
+char *fq_enqueue(fqueue_t *fq);
+char *fq_dequeue(fqueue_t *fq);
+char *fq_array(fqueue_t *fq, int idx);
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 camqueue_t *cq_create(int capacity);
 
-camera_t *cq_front(camqueue_t *camqueue);
-camera_t *cq_dequeue(camqueue_t *camqueue);
-camera_t *cq_rear(camqueue_t *camqueue);
-camera_t *cq_get(camqueue_t *camqueue, int idx);
+int cq_isfull(camqueue_t *cq);
+int cq_isempty(camqueue_t *cq);
+int cq_contains(camqueue_t *cq, const char *shmpath);
+int cq_enqueue(camqueue_t *cq, const char *shmpath, int bufsize);
+ 
+void cq_dequeue(camqueue_t *cq);
+void cq_free(camqueue_t *cq);
+void cq_drop(camqueue_t *cq, int idx);
 
-int cq_capacity(camqueue_t *camqueue);
-int cq_size(camqueue_t *camqueue);
-int cq_isfull(camqueue_t *camqueue);
-int cq_isempty(camqueue_t *camqueue);
-int cq_contains(camqueue_t *camqueue, int key);
-int cq_size(camqueue_t *camqueue);
-int cq_rearidx(camqueue_t *camqueue);
-int cq_frontidx(camqueue_t *camqueue);
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-void cq_free(camqueue_t *camqueue);
-void cq_enqueue(camqueue_t *camqueue, camera_t *camera);
-void cq_drop(camqueue_t *camqueue, int idx);
-void cq_requeue(camqueue_t *camqueue);
+camera_t *cam_create(const char *shmpath, int bufsize);
 
+void cam_free(camera_t *cam);
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+int get_shmsize(int fsize, int qsize);
+  
 #endif

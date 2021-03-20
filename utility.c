@@ -1,284 +1,222 @@
 #include "utility.h"
-#include <sys/ipc.h>
-#include <sys/shm.h>
 
-
-fqueue_t *fq_create(void *addr, int capacity, int framesize)
+void exit_sys(const char *message)
 {
-  fqueue_t *fqueue = (fqueue_t*)addr;
-  fqueue->capacity = capacity;
- 
-  fqueue->size = 0;
-  fqueue->front = 0;
-  fqueue->rear = fqueue->capacity - 1;
-   
-  fqueue->array = (char**)((char*) addr + sizeof(fqueue_t));
-  char* fptr = (char*) addr + sizeof(fqueue_t) +
-    fqueue->capacity * sizeof(char*);
+  perror(message);
+  exit(EXIT_FAILURE);
+}
+
+fqueue_t *fq_create_at(void *addr, int capacity, size_t fsize)
+{
+  fqueue_t *fq = (fqueue_t *)addr;
+
+  fq->capacity = capacity;
+  fq->front = 0;
+  fq->rear = capacity -1;
+  fq->size = 0;
+  fq->fsize = fsize;
   
-  for (int i = 0; i < fqueue->capacity; ++i)
-    {
-      fqueue->array[i] = fptr + i * framesize;
-    }
-  return fqueue;
+  return fq;
 }
 
-int fq_isfull(fqueue_t *fqueue)
+char *fq_array(fqueue_t *fq, int idx)
 {
-  return fqueue->capacity == fqueue->size;
+  return (char *)fq + sizeof(fqueue_t) + fq->fsize * idx;
 }
 
-int fq_isempty(fqueue_t *fqueue)
+int fq_isfull(fqueue_t *fq)
 {
-  return !fqueue->size;
+  return fq->capacity == fq->size;
 }
 
-char *fq_enqueue(fqueue_t *fqueue)
+int fq_isempty(fqueue_t *fq)
 {
-  if (fq_isfull(fqueue)) return NULL;
+  return !fq->size;
+}
 
-  fqueue->rear = (fqueue->rear + 1) % fqueue->capacity;
-  ++fqueue->size;
+char *fq_enqueue(fqueue_t *fq)
+{
+  if (fq_isfull(fq)) return NULL;
+
+  fq->rear = (fq->rear + 1) % fq->capacity;
+  ++fq->size;
   
-  return fqueue->array[fqueue->rear];
+  return fq_array(fq, fq->rear);
 }
 
-char *fq_dequeue(fqueue_t *fqueue)
+char *fq_dequeue(fqueue_t *fq)
 {
-  if (!fqueue->size) return NULL;
+  if (fq_isempty(fq)) return NULL;
 
-  char * frame = fqueue->array[fqueue->front];
-  fqueue->front = (fqueue->front + 1) % fqueue->capacity;
-  --fqueue->size;
+  char *ret = fq_array(fq, fq->front);
+
+  fq->front = (fq->front + 1) % fq->capacity;
+  --fq->size;
   
-  return frame;
+  return ret; 
 }
 
-char *fq_front(fqueue_t *fqueue)
-{
-  return fq_isempty(fqueue) ? NULL : fqueue->array[fqueue->front];
-}
-
-char *fq_rear(fqueue_t *fqueue)
-{
-  return fq_isempty(fqueue) ? NULL : fqueue->array[fqueue->rear];
-}
-
-int fq_size(fqueue_t *fqueue)
-{
-  if (fqueue) return fqueue->size;
-  return -1;
-}
-
-camera_t *cam_create(void *addr, int width, int height, int fps, int bufsize, int key)
-{
-  camera_t *camera = (camera_t*)addr;
-
-  camera->width = width;
-  camera->height = height;
-  camera->fsize = camera->width * camera->height;
-  camera->fps = fps;
-  camera->bufsize = bufsize;
-  camera->key = key;
-  camera->turn = WRITER;
-  camera->frame_count = 0;
-  camera->fqueue = (fqueue_t*)((char*)addr + sizeof(camera_t));
-    
-  return camera;
-}
-
-int cam_fcnt (camera_t *camera)
-{
-  return ++camera->frame_count;
-}
-
-fqueue_t *cam_fqueue(camera_t *camera)
-{
-  return camera->fqueue;
-}
-
-
-void cam_free(camera_t *camera)
-{
-  if (camera->fqueue) free(camera->fqueue);
-  if (camera) free(camera);
-}
-
-void cam_setturn(camera_t *camera, int party)
-{
-  if (!camera) return;
-  if (party != READER && party != WRITER) return;
-
-  camera->turn = party;
-}
-
-int cam_key(camera_t *camera)
-{
-  return camera->key;
-}
-
-int cam_width(camera_t *camera)
-{
-  return camera->width;
-}
-
-int cam_height(camera_t *camera)
-{
-  return camera->height;
-}
-
-int cam_fsize(camera_t *camera)
-{
-  return camera->fsize;
-}
-
-int cam_fps(camera_t *camera)
-{
-  return camera->fps;
-}
-
-int cam_bufsize(camera_t *camera)
-{
-  return camera->bufsize;
-}
-int cam_turn(camera_t *camera)
-{
-  return camera->turn;
-}
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 camqueue_t *cq_create(int capacity)
 {
-  camqueue_t *camqueue = (camqueue_t*)malloc(sizeof(camqueue_t));
-  if (!camqueue) return NULL;
+  camqueue_t *cq = (camqueue_t *)malloc(sizeof(camqueue_t));
 
-  camqueue->capacity = capacity;
-  camqueue->size = 0;
-  camqueue->front = 0;
-  camqueue->rear = camqueue->capacity - 1;
-  camqueue->array = (camera_t**)malloc(sizeof(camera_t*) * camqueue->capacity);
-  if (!camqueue->array)
+  if (!cq)
     {
-      free(camqueue);
+      fprintf(stderr, "Error: Couldn't allocate memory for camera queue\n");
       return NULL;
     }
-  return camqueue;
+
+  cq->capacity = capacity;
+  cq->front = 0;
+  cq->rear = cq->capacity -1;
+  cq->size = 0;
+  cq->array = (camera_t **)malloc(sizeof(camera_t *) * cq->capacity);
+
+  return cq;
 }
 
-void cq_free(camqueue_t *camqueue)
+int cq_isfull(camqueue_t *cq)
 {
-  if (camqueue->array) free(camqueue->array);
-  if (camqueue) free(camqueue);
+  return cq->size == cq->capacity;
 }
 
-int cq_size(camqueue_t *camqueue)
+int cq_isempty(camqueue_t *cq)
 {
-  return camqueue->size;
+  return !cq->size;
 }
 
-int cq_isfull(camqueue_t *camqueue)
+int cq_contains(camqueue_t *cq, const char *shmpath)
 {
-  return camqueue->capacity == camqueue->size;
-}
-
-int cq_isempty(camqueue_t *camqueue)
- {
-   return !camqueue->size;
- }
-
-int cq_capacity(camqueue_t *camqueue)
-{
-  return camqueue->capacity;
-}
-
-camera_t *cq_front(camqueue_t *camqueue)
-{
-  return cq_isempty(camqueue) ? NULL: camqueue->array[camqueue->front]; 
-}
-
-camera_t *cq_rear(camqueue_t *camqueue)
-{
-  return cq_isempty(camqueue) ? NULL: camqueue->array[camqueue->rear]; 
-}
-
-void cq_enqueue(camqueue_t *camqueue, camera_t *camera)
-{
-  if (cq_isfull(camqueue)) return;
-
-  camqueue->rear = (camqueue->rear + 1) % camqueue->capacity;
-  camqueue->array[camqueue->rear] = camera;
-  ++camqueue->size;
-}
-
-camera_t *cq_dequeue(camqueue_t *camqueue)
-{
-  if (cq_isempty(camqueue)) return NULL;
-
-  camera_t *camera = camqueue->array[camqueue->front];
-  camqueue->front = (camqueue->front + 1) % camqueue->capacity;
-  --camqueue->size;
-
-  return camera;
-}
-
-void cq_drop(camqueue_t *camqueue, int idx)
-{
-  if (!camqueue) return;
-  if (cq_isempty(camqueue)) return;
-  
-  while (idx != camqueue->rear)
+  if (cq_isempty(cq)) return -1;
+  for (int i = 0, k = cq->front; i < cq->size; ++i, k = (k + 1) % cq->capacity)
     {
-      camqueue->array[idx] = camqueue->array[(idx + 1) % camqueue->capacity];
-      idx = (idx + 1) % camqueue->capacity;
-    }
-  camqueue->rear = (idx + camqueue->capacity - 1) % camqueue->capacity;
-  --camqueue->size;
-    
-}
-
-int cq_contains(camqueue_t *camqueue, int key)
-{
-  if (!camqueue) return -1;
-
-  if (cq_isempty(camqueue)) return -1;
-  
-  int i;
-  
-  for (i = cq_frontidx(camqueue); i != cq_rearidx(camqueue); i = (i + 1) % cq_capacity(camqueue))
-    {
-      if (cam_key(cq_get(camqueue, i)) == key) return i;
+      if (!strcmp(shmpath, cq->array[k]->shmpath))
+	{
+	  return k;
+	}
     }
   
-  if (cam_key(cq_get(camqueue, i)) == key) return i;
-
   return -1;
 }
 
-void cq_requeue(camqueue_t *camqueue)
+int cq_enqueue(camqueue_t *cq, const char *shmpath, int bufsize)
 {
-  camera_t *camera = camqueue->array[camqueue->front];
-  camqueue->front = (camqueue->front + 1) % camqueue->capacity;
-  camqueue->rear = (camqueue->rear + 1) % camqueue->capacity;
-  camqueue->array[camqueue->rear] = camera;
+  if (cq_isfull(cq))
+    {
+      fprintf(stderr, "Error: Camera queue is full.\n");
+      return -1;
+    }
+
+  if (cq_contains(cq, shmpath) != -1)
+    {
+      fprintf(stderr, "Error: This camera is already in queue\n");
+      return -1;
+    }
+
+  cq->rear = (cq->rear + 1) % cq->capacity;
+  cq->array[cq->rear] = cam_create(shmpath, bufsize);
+
+  if (!cq->array[cq->rear])
+    {
+      cq->rear = (cq->capacity + cq->rear - 1) % cq->capacity;
+      fprintf(stderr, "Error: Couldn't allocate memory for new camera\n");
+      return -1;
+    }
+  
+  ++cq->size;
+  return 0;
 }
 
-camera_t *cq_get(camqueue_t *camqueue, int idx)
+void cq_dequeue(camqueue_t *cq)
 {
-  if (camqueue->array[idx]) return camqueue->array[idx];
-  return NULL;
+  if (cq_isempty(cq))
+    {
+      fprintf(stderr, "Error: Camqueue is empty, cannot dequeue!\n");
+      return;
+    }
+  free(cq->array[cq->front]);
+  cq->front = (cq->front + 1) % cq->capacity;
+  --cq->size;
 }
 
-int cq_frontidx(camqueue_t *camqueue)
+void cq_free(camqueue_t *cq)
 {
-  return camqueue->front;
+  if (!cq) return;
+  if (cq_isempty(cq)) goto end;
+
+  for (int i = 0, k = cq->front; i < cq->size; ++i, k = (k + 1) % cq->capacity)
+      cam_free(cq->array[k]);
+  
+ end:
+  free(cq->array);
+  free(cq);
 }
 
-int cq_rearidx(camqueue_t *camqueue)
+void cq_drop(camqueue_t *cq, int idx)
 {
-  return camqueue->rear;
+  if (!cq) return;
+  if (cq_isempty(cq)) return;
+  
+  while (idx != cq->rear)
+    {
+      cq->array[idx] = cq->array[(idx + 1) % cq->capacity];
+      idx = (idx + 1) % cq->capacity;
+    }
+  cq->rear = (idx + cq->capacity - 1) % cq->capacity;
+  --cq->size;
+    
 }
 
-int getshmsize(int fsize, int bufsize)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+camera_t *cam_create(const char *shmpath, int bufsize)
 {
-  return sizeof(camera_t) + sizeof(fqueue_t) +
-    bufsize * sizeof(char*) + bufsize * fsize;
+  camera_t *cam = (camera_t *)malloc(sizeof(camera_t));
+  if (!cam)
+    {
+      fprintf(stderr, "Error: Couldn't allocate memory block for camera");
+      return NULL;
+    }
+
+  int fdshm = shm_open(shmpath, O_RDWR, 0);
+  if (fdshm == -1)
+    {
+      perror("Error: shm_open failed: ");
+      return NULL;
+    }
+
+  void *addr = mmap(NULL, bufsize, PROT_READ|PROT_WRITE, MAP_SHARED, fdshm, 0);
+  if (!addr)
+    {
+      perror("Error: Couldn't map shared for new camera: ");
+      close(fdshm);
+      return NULL;
+    }
+
+  strncpy(cam->shmpath, shmpath, 16);
+  cam->fdshm = fdshm;
+  cam->bufsize = bufsize;
+  cam->fqueue = (fqueue_t *)addr;
+
+  return cam;
+}
+
+void cam_free(camera_t *cam)
+{
+  if (!cam) return;
+
+  munmap(cam->fqueue, cam->bufsize);
+  close(cam->fdshm);
+  if (shm_unlink(cam->shmpath))
+      perror("Error: Couldn't unlik shared memory of freeing camera: ");
+  free(cam);
+}
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+int get_shmsize(int fsize, int qsize)
+{
+  return sizeof(fqueue_t) + qsize * sizeof(char**) + fsize * qsize;
 }

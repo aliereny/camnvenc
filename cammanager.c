@@ -1,118 +1,90 @@
-// gcc -Wall -o cammanager cammanager.c utility.c `pkg-config --libs libavutil libavcodec`
-// ./cammanager 1280 800 30 300 9870
-
 #include "utility.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
-#include <sys/types.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <libavcodec/avcodec.h>
-//#include <libavutil/pixdesc.h>
-#include <libavutil/hwcontext.h>
+void quit(int signal);
 
-#include <unistd.h>
-
-fqueue_t *init_fq(void *addr, int size);
+int fdshm, mapped = 0, fsize;
+const int width = WIDTH, height = HEIGHT, qsize = QSIZE, fps = FPS;
+size_t bufsize;
+void *addr;
+FILE *urand;
+const char *shmpath;
 
 int main(int argc, const char *argv[])
 {
-  key_t key;
-  int shmid, shsize, ret = 0;
-  int width, height, fsize, fps, bufsize;
-  char *shm;
-
-  if (argc < 6)
+  if (argc < 2 || argc > 2)
     {
-      fprintf(stderr, "Usage: %s <width> <height> <fps> <buffer size> <key>\n", argv[0]);
-      return -1;
-    }
-
-  key = atoi(argv[5]);
-  width  = atoi(argv[1]);
-  height = atoi(argv[2]);
-  fps = atoi(argv[3]);
-  bufsize = atoi(argv[4]);
-  fsize = width * height;
-  shsize = getshmsize(fsize, bufsize);
-  
-  if((shmid = shmget(key, shsize, IPC_CREAT | 0666)) < 0)
-    {
-      perror("Error: shmget failed.");
+      fprintf(stderr, "Usage: %s <shm_path>\n", argv[0]);
       exit(-1);
     }
 
-  if (!(shm = shmat(shmid, NULL, 0)))
-    { 
-      perror("Error: shmat failed.");
-      ret = -1;
-      goto close;
-    }
-  
-  camera_t *camera = cam_create(shm, width, height, fps, bufsize, key);
+  fsize = width*height;
+  bufsize = get_shmsize(fsize, qsize);
+  shmpath = argv[1];
 
-  fqueue_t *fqueue = fq_create(cam_fqueue(camera), cam_bufsize(camera), cam_fsize(camera));
-
+  if (signal(SIGINT, quit) == SIG_ERR)
+    sclose("signal");
   
-  fprintf(stderr, "debug %p\n", fqueue);
-  fprintf(stderr, "%p\n", shm + shsize);
-  
-  camqueue_t* cq = cq_create(10);
-  camera_t *cam = (camera_t*) shm;
-  cq_enqueue(cq, cam);
-  fqueue_t *fq = cam_fqueue(cam);
-  
-  FILE *rdata;
-  if (!(rdata = fopen("/dev/urandom", "r")))
+  if ((fdshm = shm_open(shmpath, O_RDWR, 0)) != -1)
     {
-      perror("Error: Couldn't get random data from /dev/urandom");
-      ret = -1;
-      goto close;
+      fprintf(stderr, "Error: This shared memory path is already in use!\n");
+      close(fdshm);
+      exit(-1);
     }
+  if ((fdshm = shm_open(shmpath, O_CREAT|O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH)) == -1)
+    sclose("shmopen");
 
+  if (ftruncate(fdshm, bufsize))
+    sclose("ftruncate");
+  
+  if (!(addr = mmap(NULL, bufsize, PROT_READ|PROT_WRITE, MAP_SHARED, fdshm, 0)))
+    sclose("mmap");
+  mapped = 1;
 
-  clock_t it = clock(); // initialization time
-  clock_t t = clock();
-  int fcount = 0;
+  if (!(urand = fopen("/dev/urandom", "r")))
+    sclose("fopen");
 
+  fqueue_t *fq = fq_create_at(addr, qsize, fsize);
+  int fcnt = 0;
+  clock_t c = clock();
   char *frame;
+
   while (1)
     {
-      if ((float) (clock() - it) / CLOCKS_PER_SEC  > 30) break;
+      if (dtime(c) >= 1.)
+	{
+	  fprintf(stderr, "Info: %2d frames are written into the shared "
+		  "memory last second\n", fcnt);
+	  fcnt = 0;
+	  c = clock();
+	  continue;
+	}
       
-      if ((float) (clock() - t) / CLOCKS_PER_SEC> 0.99)
-	{
-	  printf("%d frames are written last sec\n", fcount);
-	  fcount = 0;
-	  t = clock();
-	}
+      if (fcnt == fps) continue;
 
-      if (fcount != fps)
+      if(!(frame = fq_enqueue(fq)))
 	{
-	  while (cam_turn(camera) == READER);
-	  if (!(frame = fq_enqueue(fqueue)))
-	    {
-	      fprintf(stderr, "Error: Camera buffer is full!\n");
-	      ret = -1;
-	      goto close;
-	    }
-	  if(fread(frame, 1, fsize, rdata) < fsize)
-	    {
-	      fprintf(stderr, "Error: Couldn't read random data!\n");
-	      ret = -1;
-	      goto close;
-	    }
-	  cam_setturn(camera, READER);
-	  ++fcount;
+	  fprintf(stderr, "Error: Frames queue is full, terminating.\n");
+	  quit(0);
 	}
+      
+      if (fread(frame, 1, fsize, urand) < fsize)
+	sclose("Error: Couldn't read random data, terminating.\n");
+      ++fcnt;
     }
 
- close:
-  if (rdata) fclose(rdata);
-  shmctl(shmid, IPC_RMID, 0);
-  return ret;
+  quit(0);
+}
+
+void quit(int signal)
+{
+  if (urand) free(urand);
+  if (mapped) munmap(addr, bufsize);
+  if (fdshm != -1) close(fdshm);
+  if (shm_unlink(shmpath) == -1)
+    perror("shm_unlink");
+  if (signal)
+    fprintf(stderr, "\nInfo: Console signal recieved, safe quitting.\n");
+  exit(signal);
 }
